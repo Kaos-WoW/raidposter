@@ -120,6 +120,7 @@
       <textarea id="importText" placeholder="z.B.&#10;Tank&#10;PlayerOne - Warrior&#10;PlayerTwo - Paladin&#10;&#10;Healer&#10;PlayerThree - Priest&#10;&#10;DPS&#10;PlayerFour - Mage"></textarea>
     </div>
     <button id="btnParse">Importieren &amp; parsen</button>
+    <button class="secondary" id="btnSyncDiscord" style="margin-left:8px;">🔄 Jetzt aus Discord synchronisieren</button>
     <button class="secondary small" id="btnAddPlayer" style="margin-left:8px;">+ Spieler manuell hinzufügen</button>
 
     <div style="margin-top:14px;">
@@ -787,16 +788,39 @@ function toast(msg, ok=true){
 }
 
 // ---------- Events ----------
-document.getElementById("btnParse").addEventListener("click", ()=>{
-  const text = document.getElementById("importText").value;
+function applyImportedText(text){
   const {players, title} = parseImportText(text);
-  if(!players.length){ toast("Keine Spieler erkannt – Format prüfen.", false); return; }
+  if(!players.length){ toast("Keine Spieler erkannt – Format prüfen.", false); return false; }
   roster = roster.concat(players);
   const titleField = document.getElementById("raidTitle");
   if(title && !titleField.value.trim()) titleField.value = title;
   renderAll();
   const missingClass = players.filter(p=>!p.class).length;
   toast(`${players.length} Spieler importiert.` + (missingClass ? ` ${missingClass}x Klasse fehlt – bitte einmalig setzen.` : ""));
+  return true;
+}
+
+document.getElementById("btnParse").addEventListener("click", ()=>{
+  applyImportedText(document.getElementById("importText").value);
+});
+
+document.getElementById("btnSyncDiscord").addEventListener("click", async ()=>{
+  const btn = document.getElementById("btnSyncDiscord");
+  btn.disabled = true;
+  toast(`Hole aktuelles Setup für ${DAY_LABELS[currentDay]} aus Discord...`);
+  try{
+    const {data, error} = await sb.functions.invoke("discord-sync", {body:{day: currentDay}});
+    if(error || !data || data.error){
+      toast("Sync fehlgeschlagen: " + (data?.error || error?.message || "Unbekannter Fehler"), false);
+      return;
+    }
+    document.getElementById("importText").value = data.text;
+    applyImportedText(data.text);
+  }catch(err){
+    toast("Sync fehlgeschlagen: " + err.message, false);
+  }finally{
+    btn.disabled = false;
+  }
 });
 
 document.getElementById("btnAddPlayer").addEventListener("click", ()=>{
