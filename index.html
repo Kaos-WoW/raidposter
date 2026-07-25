@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Raid-Einteilung</title>
+<style>
+  :root{
+    --bg:#313338; --bg2:#2b2d31; --bg3:#1e1f22; --panel:#383a40;
+    --text:#dbdee1; --muted:#949ba4; --accent:#5865f2; --accent-hover:#4752c4;
+    --green:#23a55a; --red:#da373c; --border:#3f4147;
+  }
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--text); font-family:"Segoe UI",Helvetica,Arial,sans-serif;
+    margin:0; padding:24px; line-height:1.4;
+  }
+  h1{font-size:22px; margin:0 0 4px;}
+  h2{font-size:15px; margin:0 0 10px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted);}
+  .sub{color:var(--muted); margin-bottom:20px; font-size:13px;}
+  .grid{display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start;}
+  @media (max-width:1000px){.grid{grid-template-columns:1fr;}}
+  .card{background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:20px;}
+  textarea, input, select{
+    background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:4px;
+    padding:8px; font-size:13px; font-family:inherit;
+  }
+  textarea{width:100%; min-height:110px; resize:vertical;}
+  input[type=text], input[type=url], input[type=password]{width:100%;}
+  label{font-size:12px; color:var(--muted); display:block; margin-bottom:4px;}
+  .field{margin-bottom:12px;}
+  button{
+    background:var(--accent); color:#fff; border:none; border-radius:4px; padding:8px 14px;
+    font-size:13px; font-weight:600; cursor:pointer;
+  }
+  button:hover{background:var(--accent-hover);}
+  button.secondary{background:var(--panel); color:var(--text);}
+  button.secondary:hover{background:#43454b;}
+  button.danger{background:transparent; color:var(--red); padding:4px 8px; font-weight:400;}
+  button.danger:hover{background:rgba(218,55,60,.15);}
+  button.small{padding:4px 10px; font-size:12px;}
+  .row{display:flex; gap:8px; align-items:center; margin-bottom:8px;}
+  .row > *{flex:1;}
+  .row > .fixed{flex:0 0 auto;}
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th,td{text-align:left; padding:5px 6px; border-bottom:1px solid var(--border);}
+  th{color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase;}
+  td input, td select{width:100%; padding:5px;}
+  .count-pill{
+    display:inline-block; background:var(--panel); color:var(--muted); border-radius:10px;
+    padding:1px 8px; font-size:11px; margin-left:6px;
+  }
+  #preview{
+    background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:14px;
+    white-space:pre-wrap; font-size:14px; min-height:120px;
+  }
+  #preview b{color:#fff;}
+  #rawBox{width:100%; min-height:160px; font-family:Consolas,monospace; font-size:12px;}
+  .toast{
+    position:fixed; bottom:20px; right:20px; padding:10px 16px; border-radius:6px; font-size:13px;
+    color:#fff; opacity:0; transform:translateY(10px); transition:all .2s; z-index:1100;
+  }
+  .toast.show{opacity:1; transform:translateY(0);}
+  .toast.ok{background:var(--green);}
+  .toast.err{background:var(--red);}
+  .empty-hint{color:var(--muted); font-size:12px; font-style:italic; padding:6px 0;}
+  .actions-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px;}
+  .tabs{display:flex; gap:6px;}
+  .tab-btn{
+    flex:1; background:var(--panel); color:var(--muted); border:1px solid var(--border);
+    border-radius:4px; padding:8px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .tab-btn:hover{background:#43454b;}
+  .tab-btn.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .live-dot{display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px;}
+  .live-status{font-size:12px; color:var(--muted); display:flex; align-items:center;}
+  .login-overlay{
+    position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; z-index:1000;
+  }
+  .login-box{background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:28px; width:300px;}
+  .login-box h2{margin:0 0 4px; text-transform:none; letter-spacing:0; font-size:18px; color:var(--text);}
+  .login-box .sub{margin-bottom:16px;}
+  .login-box button{width:100%; margin-top:4px;}
+  #loginError{color:var(--red); font-size:12px; margin-top:8px; min-height:14px;}
+</style>
+</head>
+<body>
+
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <h2>🔒 Raid-Einteilung</h2>
+    <div class="sub">Gemeinsames Passwort der Raidleitung eingeben.</div>
+    <div class="field">
+      <label>Passwort</label>
+      <input type="password" id="loginPassword" placeholder="Passwort">
+    </div>
+    <button id="btnLogin">Anmelden</button>
+    <div id="loginError"></div>
+  </div>
+</div>
+
+<div class="actions-top">
+  <div>
+    <h1>🗡️ Raid-Einteilung</h1>
+    <div class="sub">Spielerliste importieren, Tanks/CC/Heiler zuweisen, Vorschau prüfen, posten.</div>
+  </div>
+  <div class="actions-top" style="width:auto;">
+    <span class="live-status" id="liveStatus"><span class="live-dot"></span>Live verbunden</span>
+    <button class="secondary" id="btnNewRaid">🔄 Neuer Raid</button>
+    <button class="secondary" id="btnLogout">🔓 Abmelden</button>
+  </div>
+</div>
+
+<div class="grid">
+<div>
+
+  <div class="card">
+    <h2>1. Spielerliste importieren</h2>
+    <div class="field">
+      <label>Raid-Helper Signup-Text einfügen (Copy-Paste aus Discord)</label>
+      <textarea id="importText" placeholder="z.B.&#10;Tank&#10;PlayerOne - Warrior&#10;PlayerTwo - Paladin&#10;&#10;Healer&#10;PlayerThree - Priest&#10;&#10;DPS&#10;PlayerFour - Mage"></textarea>
+    </div>
+    <button id="btnParse">Importieren &amp; parsen</button>
+    <button class="secondary small" id="btnAddPlayer" style="margin-left:8px;">+ Spieler manuell hinzufügen</button>
+
+    <div style="margin-top:14px;">
+      <div class="actions-top">
+        <span>Roster<span class="count-pill" id="rosterCount">0</span></span>
+      </div>
+      <table id="rosterTable">
+        <thead><tr><th>Name</th><th>Klasse</th><th>Rolle</th><th></th></tr></thead>
+        <tbody id="rosterBody"></tbody>
+      </table>
+      <div class="empty-hint" id="rosterEmptyHint">Noch keine Spieler importiert.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2. 🛡️ Tanks</h2>
+    <div id="tankList"></div>
+    <button class="secondary small" id="btnAddTank">+ Tank hinzufügen</button>
+  </div>
+
+  <div class="card">
+    <h2>3. 🌀 Crowd Control</h2>
+    <div id="ccList"></div>
+    <button class="secondary small" id="btnAddCc">+ CC hinzufügen</button>
+  </div>
+
+  <div class="card">
+    <h2>4. 💚 Heiler</h2>
+    <div id="healList"></div>
+    <button class="secondary small" id="btnAddHeal">+ Heiler hinzufügen</button>
+  </div>
+
+</div>
+<div>
+
+  <div class="card">
+    <h2>Einstellungen</h2>
+    <div class="field">
+      <label>Raidtag / Zielkanal</label>
+      <div class="tabs" id="dayTabs">
+        <button type="button" class="tab-btn" data-day="monday">Montag</button>
+        <button type="button" class="tab-btn" data-day="thursday">Donnerstag</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>Discord Webhook-URL <span id="dayLabel"></span></label>
+      <input type="url" id="webhookUrl" placeholder="https://discord.com/api/webhooks/...">
+    </div>
+    <div class="field">
+      <label>Raid-Titel (optional, erscheint in der Überschrift)</label>
+      <input type="text" id="raidTitle" placeholder="z.B. Karazhan – Mittwoch">
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Vorschau</h2>
+    <div id="preview"></div>
+    <div style="margin-top:14px;">
+      <label>Roh-Markdown (zum manuellen Kopieren)</label>
+      <textarea id="rawBox" readonly></textarea>
+    </div>
+    <div style="margin-top:14px; display:flex; gap:8px;">
+      <button id="btnPost">📤 Posten</button>
+      <button class="secondary" id="btnCopy">Markdown kopieren</button>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<datalist id="ccAbilitySuggestions">
+  <option value="Sheep"></option>
+  <option value="Verbannen"></option>
+  <option value="Falle"></option>
+  <option value="Sap"></option>
+  <option value="Fesseln"></option>
+  <option value="Wurzeln"></option>
+</datalist>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ---------- Supabase-Anbindung ----------
+const SUPABASE_URL = "https://uvbubeztfbhhmmxwolxm.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2YnViZXp0ZmJoaG1teHdvbHhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ5OTcxMDUsImV4cCI6MjEwMDU3MzEwNX0.gjB-0vf7ifly0KGxtPnHrdXOjtE5hT6o7MfEnR4Po94";
+// Fester interner Login-Name für den einen gemeinsamen Auth-Nutzer - das sichtbare
+// "Passwort" der Raidleitung ist das Passwort dieses Nutzers in Supabase.
+const SHARED_EMAIL = "raidleitung@resurrected.local";
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const CLASSES = ["Krieger","Paladin","Jäger","Schurke","Priester","Schamane","Magier","Hexenmeister","Druide"];
+const CLASS_ALIASES = {
+  "warrior":"Krieger","krieger":"Krieger",
+  "paladin":"Paladin",
+  "hunter":"Jäger","jäger":"Jäger","jaeger":"Jäger",
+  "rogue":"Schurke","schurke":"Schurke",
+  "priest":"Priester","priester":"Priester",
+  "shaman":"Schamane","schamane":"Schamane",
+  "mage":"Magier","magier":"Magier",
+  "warlock":"Hexenmeister","hexenmeister":"Hexenmeister",
+  "druid":"Druide","druide":"Druide"
+};
+const CLASS_CC_ABILITY = {
+  "Magier":"Sheep","Hexenmeister":"Verbannen","Jäger":"Falle",
+  "Schurke":"Sap","Priester":"Fesseln","Druide":"Wurzeln"
+};
+const ROLE_ALIASES = {
+  "tank":"Tank","tanks":"Tank",
+  "healer":"Heiler","healers":"Heiler","heal":"Heiler","heiler":"Heiler",
+  "dps":"DPS","damage":"DPS","melee":"DPS","ranged":"DPS",
+  "bench":"Bank","absence":"Abmeldung","late":"Verspätet","tentative":"Unsicher"
+};
+// Raid-Helper Spec-Emoji-Kürzel ("Confirmed: :Fury: Name") -> Klasse + Rolle.
+// Specs die es bei mehreren Klassen gibt (Protection/Holy/Restoration) bleiben
+// klassen-mehrdeutig (class:"") aber die Rolle ist trotzdem eindeutig.
+const SPEC_MAP = {
+  "arms":{class:"Krieger", role:"DPS"}, "fury":{class:"Krieger", role:"DPS"},
+  "retribution":{class:"Paladin", role:"DPS"},
+  "beastmastery":{class:"Jäger", role:"DPS"}, "marksmanship":{class:"Jäger", role:"DPS"}, "survival":{class:"Jäger", role:"DPS"},
+  "assassination":{class:"Schurke", role:"DPS"}, "combat":{class:"Schurke", role:"DPS"}, "subtlety":{class:"Schurke", role:"DPS"},
+  "discipline":{class:"Priester", role:"Heiler"}, "shadow":{class:"Priester", role:"DPS"},
+  "elemental":{class:"Schamane", role:"DPS"}, "enhancement":{class:"Schamane", role:"DPS"},
+  "arcane":{class:"Magier", role:"DPS"}, "fire":{class:"Magier", role:"DPS"}, "frost":{class:"Magier", role:"DPS"},
+  "affliction":{class:"Hexenmeister", role:"DPS"}, "demonology":{class:"Hexenmeister", role:"DPS"}, "destruction":{class:"Hexenmeister", role:"DPS"},
+  "balance":{class:"Druide", role:"DPS"}, "feral":{class:"Druide", role:""},
+  "protection":{class:"", role:"Tank"},
+  "holy":{class:"", role:"Heiler"},
+  "restoration":{class:"", role:"Heiler"}
+};
+// Anmeldestatus-Präfix ("Confirmed:", "Tentative:", ...) -> überschreibt die Rolle,
+// wenn der Spieler nicht fest zugesagt hat (Spec-Rolle ist dann irrelevant).
+const STATUS_ROLE_OVERRIDE = {
+  "tentative":"Unsicher", "bench":"Bank", "absence":"Abmeldung", "absent":"Abmeldung",
+  "declined":"Abmeldung", "decline":"Abmeldung", "late":"Verspätet"
+};
+
+let roster = []; // {id, name, class, role}
+let tanks = [];  // {id, playerId, target}
+let ccs = [];    // {id, playerId, ability, target}
+let heals = [];  // {id, playerId, target}
+let classbook = {}; // Name -> Klasse, geteilt über alle Raidleitungs-Konten
+let rolebook = {};  // Name -> Rolle, geteilt über alle Raidleitungs-Konten
+let webhooks = {monday:"", thursday:""};
+const nid = () => crypto.randomUUID();
+
+// Während eine Änderung von einem ANDEREN Client übernommen wird, nicht sofort
+// wieder zurück in die Datenbank schreiben (würde eine Echo-Schleife auslösen).
+let applyingRemote = false;
+
+function debounce(fn, ms){
+  let t;
+  return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
+}
+
+// ---------- Parsing ----------
+function normalizeClass(raw){
+  if(!raw) return "";
+  const key = raw.trim().toLowerCase();
+  return CLASS_ALIASES[key] || (CLASSES.includes(raw.trim()) ? raw.trim() : "");
+}
+
+const FOOTER_LINE_RE = /^(sent by|click the buttons|confirm$|cancel$)/i;
+
+function parseImportText(text){
+  const lines = text.split(/\r?\n/);
+  let currentRole = "";
+  let processedFirstLine = false;
+  let title = "";
+  const found = [];
+
+  for(let raw of lines){
+    // Discord-Sonderzeichen entfernen: Zero-Width-Space/Joiner, BOM, Word-Joiner,
+    // Left/Right-to-Right-Mark (Leerzeilen-Platzhalter), Variationsselektoren
+    // (hängen an ":Confirmed:️"), Braille-Leerzeichen (Einrückung von Gruppen).
+    const line = raw.replace(/[​-‏﻿⁠︎️⠀]/g, "").trim();
+    if(!line) continue;
+
+    // Group-based Composition-Tool headers ("Group 1:", "Gruppe 2:") carry no role info
+    if(/^(group|gruppe)\s*\d+\s*:?\s*$/i.test(line)){
+      currentRole = "";
+      processedFirstLine = true;
+      continue;
+    }
+    const roleKey = line.toLowerCase().replace(/[^a-zäöü]/g,"");
+    if(ROLE_ALIASES[roleKey]){
+      currentRole = ROLE_ALIASES[roleKey];
+      processedFirstLine = true;
+      continue;
+    }
+    if(FOOTER_LINE_RE.test(line) || /composition tool/i.test(line)){
+      processedFirstLine = true;
+      continue;
+    }
+
+    // Raid-Helper Emoji-Tag-Zeile: ein oder mehrere ":Tag:" am Zeilenanfang, z.B.
+    // ":Confirmed: :Fury: [R]Name", ":Guardian: [R]Name", ":Tentative: :Holy2: Name"
+    {
+      let work = line;
+      const tokenRe = /^:([A-Za-zÄÖÜäöüß]+)(\d*):\s*/;
+      const tokens = [];
+      let tm;
+      while((tm = tokenRe.exec(work))){
+        tokens.push(tm[1].toLowerCase());
+        work = work.slice(tm[0].length);
+      }
+      if(tokens.length){
+        let namePart = work.trim().replace(/^[^\p{L}\p{N}\[]+/u, "").trim();
+        let cls = "", role = "", statusRole = "";
+        tokens.forEach(tok=>{
+          const spec = SPEC_MAP[tok];
+          if(spec){ if(spec.class) cls = cls || spec.class; if(spec.role) role = role || spec.role; }
+          else if(STATUS_ROLE_OVERRIDE[tok]){ statusRole = STATUS_ROLE_OVERRIDE[tok]; }
+        });
+        if(!cls && classbook[namePart]) cls = classbook[namePart];
+        let finalRole = statusRole || role || rolebook[namePart] || "";
+        if(namePart) found.push({id:nid(), name:namePart, class: cls || "", role: finalRole});
+        processedFirstLine = true;
+        continue;
+      }
+    }
+
+    if(!processedFirstLine){
+      // very first content line, no header matched yet -> treat as raid/dungeon title
+      title = line.replace(/[|].*$/,"").trim();
+      processedFirstLine = true;
+      continue;
+    }
+
+    // strip list markers, then leading emoji/checkmark symbols (keeps "[Tag]Name")
+    let clean = line
+      .replace(/^[\s•\-\*]+/, "")
+      .replace(/^\d+[.\)]\s*/, "")
+      .replace(/^[^\p{L}\p{N}\[]+/u, "")
+      .trim();
+    if(!clean) continue;
+
+    let name = "", cls = "";
+    let m = clean.match(/^(.+?)\s*-\s*(.+)$/);
+    if(m){ name = m[1].trim(); cls = normalizeClass(m[2]); }
+    if(!name){
+      m = clean.match(/^(.+?)\s*\((.+?)\)\s*$/);
+      if(m){ name = m[1].trim(); cls = normalizeClass(m[2]); }
+    }
+    if(!name){
+      // "Class Name" fallback
+      const parts = clean.split(/\s+/);
+      if(parts.length >= 2 && normalizeClass(parts[0])){
+        cls = normalizeClass(parts[0]);
+        name = parts.slice(1).join(" ");
+      }
+    }
+    if(!name) name = clean;
+    if(!cls && classbook[name]) cls = classbook[name];
+    // explicit role from this import (Tank/Healer/DPS header) wins over remembered role;
+    // group-only formats (no role header) fall back to what was set for this name last time
+    let role = currentRole || rolebook[name] || "";
+
+    if(name) found.push({id:nid(), name, class: cls || "", role});
+  }
+
+  // Automatisch lernen: alles was diesmal eindeutig aufgelöst wurde, für künftige
+  // Importe (auch andere Nachrichtenformate) merken - geteilt über alle Raidleitungen.
+  found.forEach(p=>{
+    if(p.class) classbook[p.name] = p.class;
+    if(p.role === "Tank" || p.role === "Heiler" || p.role === "DPS") rolebook[p.name] = p.role;
+  });
+  schedulePushClassbook();
+  schedulePushRolebook();
+
+  return {players: found, title};
+}
+
+// ---------- Rendering: Roster ----------
+function classOptions(selected){
+  return `<option value=""></option>` + CLASSES.map(c=>
+    `<option value="${c}" ${c===selected?"selected":""}>${c}</option>`).join("");
+}
+function roleOptions(selected){
+  const roles = ["","Tank","Heiler","DPS","Bank","Abmeldung","Verspätet","Unsicher"];
+  return roles.map(r=>`<option value="${r}" ${r===selected?"selected":""}>${r||"–"}</option>`).join("");
+}
+
+function renderRoster(){
+  const body = document.getElementById("rosterBody");
+  body.innerHTML = "";
+  document.getElementById("rosterCount").textContent = roster.length;
+  document.getElementById("rosterEmptyHint").style.display = roster.length ? "none" : "block";
+  roster.forEach(p=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><input type="text" value="${escapeAttr(p.name)}" data-field="name" data-id="${p.id}"></td>
+      <td><select data-field="class" data-id="${p.id}">${classOptions(p.class)}</select></td>
+      <td><select data-field="role" data-id="${p.id}">${roleOptions(p.role)}</select></td>
+      <td><button class="danger" data-remove="${p.id}">✕</button></td>
+    `;
+    body.appendChild(tr);
+  });
+  body.querySelectorAll("input,select").forEach(el=>{
+    el.addEventListener("input", onRosterFieldChange);
+    el.addEventListener("change", onRosterFieldChange);
+  });
+  body.querySelectorAll("[data-remove]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const id = btn.dataset.remove;
+      roster = roster.filter(p=>p.id!==id);
+      tanks = tanks.filter(t=>t.playerId!==id);
+      ccs = ccs.filter(c=>c.playerId!==id);
+      heals = heals.filter(h=>h.playerId!==id);
+      renderAll();
+    });
+  });
+  refreshAssignmentDropdowns();
+}
+function onRosterFieldChange(e){
+  const id = e.target.dataset.id;
+  const field = e.target.dataset.field;
+  const p = roster.find(x=>x.id===id);
+  if(!p) return;
+  p[field] = e.target.value;
+  if(field==="class" && p.name){
+    if(p.class) classbook[p.name] = p.class; else delete classbook[p.name];
+    schedulePushClassbook();
+  }
+  if(field==="role" && p.name){
+    if(p.role) rolebook[p.name] = p.role; else delete rolebook[p.name];
+    schedulePushRolebook();
+  }
+  renderAll();
+}
+function escapeAttr(s){ return String(s).replace(/"/g,"&quot;"); }
+
+// ---------- Assignment rows (Tanks/CC/Heal) ----------
+function playerOptions(selectedId, filterFn){
+  let list = filterFn ? roster.filter(filterFn) : roster;
+  // Falls der Filter (z.B. "nur Tanks") keine Treffer hat - z.B. weil die Rolle
+  // beim Import nicht erkannt wurde - lieber die volle Liste zeigen statt eine
+  // leere, unbenutzbare Dropdown.
+  if(filterFn && !list.length) list = roster;
+  let opts = `<option value="">– Spieler wählen –</option>`;
+  opts += list.map(p=>
+    `<option value="${p.id}" ${p.id===selectedId?"selected":""}>${escapeAttr(p.name)}${p.class?` (${p.class})`:""}</option>`
+  ).join("");
+  return opts;
+}
+
+// 8 Raidmarken - im Spiel gibt es nur diese, geteilter Pool für Tanks + CC-Ziele.
+const RAID_MARKS = ["Stern","Kreis","Diamant","Dreieck","Mond","Quadrat","Kreuz","Totenkopf"];
+function usedMarks(excludeKind, excludeId){
+  const used = new Set();
+  tanks.forEach(t=>{ if(!(excludeKind==="tank" && t.id===excludeId) && RAID_MARKS.includes(t.target)) used.add(t.target); });
+  ccs.forEach(c=>{ if(!(excludeKind==="cc" && c.id===excludeId) && RAID_MARKS.includes(c.target)) used.add(c.target); });
+  return used;
+}
+function markOptions(selected, usedSet, extra){
+  let opts = `<option value="">– Ziel wählen –</option>`;
+  RAID_MARKS.forEach(m=>{
+    if(usedSet.has(m) && m!==selected) return;
+    opts += `<option value="${m}" ${m===selected?"selected":""}>${m}</option>`;
+  });
+  (extra||[]).forEach(e=>{
+    opts += `<option value="${e}" ${e===selected?"selected":""}>${e}</option>`;
+  });
+  return opts;
+}
+
+function renderTanks(){
+  const el = document.getElementById("tankList");
+  el.innerHTML = "";
+  if(!tanks.length) el.innerHTML = `<div class="empty-hint">Noch keine Tanks zugewiesen.</div>`;
+  tanks.forEach(t=>{
+    const used = usedMarks("tank", t.id);
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `
+      <select class="fixed" style="flex:1.4" data-kind="tank" data-field="playerId" data-id="${t.id}">${playerOptions(t.playerId, p=>p.role==="Tank")}</select>
+      <select data-kind="tank" data-field="target" data-id="${t.id}">${markOptions(t.target, used, ["Rest"])}</select>
+      <button class="danger fixed" data-kind="tank" data-remove="${t.id}">✕</button>
+    `;
+    el.appendChild(row);
+  });
+  wireAssignmentRow(el);
+}
+
+function renderCcs(){
+  const el = document.getElementById("ccList");
+  el.innerHTML = "";
+  if(!ccs.length) el.innerHTML = `<div class="empty-hint">Noch keine CC-Zuweisungen.</div>`;
+  ccs.forEach(c=>{
+    const used = usedMarks("cc", c.id);
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `
+      <select class="fixed" style="flex:1.2" data-kind="cc" data-field="playerId" data-id="${c.id}">${playerOptions(c.playerId)}</select>
+      <input type="text" placeholder="Fähigkeit" list="ccAbilitySuggestions"
+        value="${escapeAttr(c.ability)}" data-kind="cc" data-field="ability" data-id="${c.id}">
+      <select data-kind="cc" data-field="target" data-id="${c.id}">${markOptions(c.target, used)}</select>
+      <button class="danger fixed" data-kind="cc" data-remove="${c.id}">✕</button>
+    `;
+    el.appendChild(row);
+  });
+  wireAssignmentRow(el);
+}
+
+function renderHeals(){
+  const el = document.getElementById("healList");
+  el.innerHTML = "";
+  if(!heals.length) el.innerHTML = `<div class="empty-hint">Noch keine Heiler zugewiesen.</div>`;
+  heals.forEach(h=>{
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `
+      <select class="fixed" style="flex:1.4" data-kind="heal" data-field="playerId" data-id="${h.id}">${playerOptions(h.playerId, p=>p.role==="Heiler")}</select>
+      <select data-kind="heal" data-field="target" data-id="${h.id}">${healTargetOptions(h.target)}</select>
+      <button class="danger fixed" data-kind="heal" data-remove="${h.id}">✕</button>
+    `;
+    el.appendChild(row);
+  });
+  wireAssignmentRow(el);
+}
+
+// Heiler-Ziele = aktuell zugewiesene Tanks (Abschnitt 2) + "Raid" als eindeutiger
+// Default, falls kein bestimmter Tank zugewiesen ist.
+function healTargetOptions(selected){
+  const tankNames = [...new Set(tanks.filter(t=>t.playerId).map(t=>playerName(t.playerId)))];
+  let opts = `<option value="Raid" ${(!selected || selected==="Raid")?"selected":""}>Raid (kein bestimmter Tank)</option>`;
+  tankNames.forEach(n=>{
+    opts += `<option value="${escapeAttr(n)}" ${n===selected?"selected":""}>${escapeAttr(n)}</option>`;
+  });
+  if(selected && selected!=="Raid" && !tankNames.includes(selected)){
+    opts += `<option value="${escapeAttr(selected)}" selected>${escapeAttr(selected)} (nicht mehr als Tank zugewiesen)</option>`;
+  }
+  return opts;
+}
+
+function wireAssignmentRow(container){
+  container.querySelectorAll("select,input[data-field]").forEach(el=>{
+    el.addEventListener("input", onAssignmentChange);
+    el.addEventListener("change", onAssignmentChange);
+  });
+  container.querySelectorAll("[data-remove]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const id = btn.dataset.remove;
+      const kind = btn.dataset.kind;
+      if(kind==="tank") tanks = tanks.filter(x=>x.id!==id);
+      if(kind==="cc") ccs = ccs.filter(x=>x.id!==id);
+      if(kind==="heal") heals = heals.filter(x=>x.id!==id);
+      renderAll();
+    });
+  });
+}
+
+function onAssignmentChange(e){
+  const id = e.target.dataset.id;
+  const field = e.target.dataset.field;
+  const kind = e.target.dataset.kind;
+  const val = e.target.value;
+  const list = kind==="tank" ? tanks : kind==="cc" ? ccs : heals;
+  const item = list.find(x=>x.id===id);
+  if(!item) return;
+  item[field] = val;
+
+  // auto-fill CC ability suggestion when player picked and ability empty
+  if(kind==="cc" && field==="playerId"){
+    const p = roster.find(x=>x.id===val);
+    if(p && CLASS_CC_ABILITY[p.class] && !item.ability){
+      item.ability = CLASS_CC_ABILITY[p.class];
+    }
+  }
+  renderAll();
+}
+
+function refreshAssignmentDropdowns(){
+  // re-render select option lists so newly added/renamed roster players show up
+  document.querySelectorAll('select[data-field="playerId"]').forEach(sel=>{
+    const kind = sel.dataset.kind;
+    const id = sel.dataset.id;
+    const list = kind==="tank" ? tanks : kind==="cc" ? ccs : heals;
+    const item = list.find(x=>x.id===id);
+    const filterFn = kind==="tank" ? p=>p.role==="Tank" : kind==="heal" ? p=>p.role==="Heiler" : undefined;
+    sel.innerHTML = playerOptions(item ? item.playerId : "", filterFn);
+  });
+}
+
+// ---------- Message building ----------
+function playerName(id){
+  const p = roster.find(x=>x.id===id);
+  return p ? p.name : "?";
+}
+
+function buildMessage(){
+  const title = document.getElementById("raidTitle").value.trim();
+  const lines = [];
+  lines.push(`# 🗡️ Raid-Einteilung${title ? " – " + title : ""}`);
+  lines.push("");
+
+  lines.push("## 🛡️ Tanks");
+  const validTanks = tanks.filter(t=>t.playerId && t.target.trim());
+  if(validTanks.length){
+    validTanks.forEach(t=>{
+      lines.push(`• **${playerName(t.playerId)}** tankt **${t.target.trim()}**`);
+    });
+  } else {
+    lines.push("_Keine Tanks zugewiesen_");
+  }
+  lines.push("");
+
+  lines.push("## 🌀 Crowd Control");
+  const validCcs = ccs.filter(c=>c.playerId && c.target.trim());
+  if(validCcs.length){
+    validCcs.forEach(c=>{
+      const ability = c.ability.trim();
+      lines.push(`• **${playerName(c.playerId)}**${ability ? ` (${ability})` : ""} → **${c.target.trim()}**`);
+    });
+  } else {
+    lines.push("_Keine CC-Zuweisungen_");
+  }
+  lines.push("");
+
+  lines.push("## 💚 Heiler");
+  const validHeals = heals.filter(h=>h.playerId && h.target.trim());
+  if(validHeals.length){
+    const groups = {};
+    validHeals.forEach(h=>{
+      const t = h.target.trim();
+      (groups[t] = groups[t] || []).push(playerName(h.playerId));
+    });
+    Object.keys(groups).forEach(target=>{
+      const names = groups[target];
+      const verb = names.length > 1 ? "heilen" : "heilt";
+      const boldNames = names.map(n=>`**${n}**`).join(", ");
+      lines.push(`• ${boldNames} ${verb} **${target}**`);
+    });
+  } else {
+    lines.push("_Keine Heiler zugewiesen_");
+  }
+
+  return lines.join("\n");
+}
+
+function mdToHtml(md){
+  return md
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/^# (.*)$/gm, "<div style='font-size:18px;font-weight:700;margin-bottom:4px;'>$1</div>")
+    .replace(/^## (.*)$/gm, "<div style='font-size:15px;font-weight:700;margin-top:10px;'>$1</div>")
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/_(.+?)_/g, "<i>$1</i>");
+}
+
+function renderPreview(){
+  const md = buildMessage();
+  document.getElementById("preview").innerHTML = mdToHtml(md);
+  document.getElementById("rawBox").value = md;
+}
+
+function renderAll(){
+  renderRoster();
+  renderTanks();
+  renderCcs();
+  renderHeals();
+  renderPreview();
+  if(!applyingRemote) schedulePushSession();
+}
+
+function newRaid(){
+  if(roster.length && !confirm("Neuer Raid starten? Aktuelle Roster-Liste und Zuweisungen werden für ALLE angemeldeten Raidleitungen geleert (Klassen-/Rollen-Gedächtnis bleibt erhalten).")) return;
+  roster = []; tanks = []; ccs = []; heals = [];
+  document.getElementById("importText").value = "";
+  document.getElementById("raidTitle").value = "";
+  renderAll();
+  toast("Neuer Raid gestartet.");
+}
+
+// ---------- Cloud-Persistenz (Supabase) ----------
+async function pushSession(){
+  if(applyingRemote) return;
+  await sb.from("shared_state").upsert({
+    key: "session",
+    value: { roster, tanks, ccs, heals, raidTitle: document.getElementById("raidTitle").value },
+    updated_at: new Date().toISOString()
+  });
+}
+const schedulePushSession = debounce(pushSession, 600);
+
+async function pushClassbook(){
+  if(applyingRemote) return;
+  await sb.from("shared_state").upsert({key:"classbook", value:classbook, updated_at:new Date().toISOString()});
+}
+const schedulePushClassbook = debounce(pushClassbook, 400);
+
+async function pushRolebook(){
+  if(applyingRemote) return;
+  await sb.from("shared_state").upsert({key:"rolebook", value:rolebook, updated_at:new Date().toISOString()});
+}
+const schedulePushRolebook = debounce(pushRolebook, 400);
+
+async function pushWebhooks(){
+  if(applyingRemote) return;
+  await sb.from("shared_state").upsert({key:"webhooks", value:webhooks, updated_at:new Date().toISOString()});
+}
+const schedulePushWebhooks = debounce(pushWebhooks, 400);
+
+async function loadInitialState(){
+  const {data, error} = await sb.from("shared_state").select("key,value")
+    .in("key", ["session","classbook","rolebook","webhooks"]);
+  if(error){ toast("Fehler beim Laden aus der Cloud: " + error.message, false); return; }
+  const byKey = Object.fromEntries((data||[]).map(r=>[r.key, r.value]));
+  const session = byKey.session || {};
+  roster = session.roster || [];
+  tanks = session.tanks || [];
+  ccs = session.ccs || [];
+  heals = session.heals || [];
+  document.getElementById("raidTitle").value = session.raidTitle || "";
+  classbook = byKey.classbook || {};
+  rolebook = byKey.rolebook || {};
+  webhooks = byKey.webhooks || {monday:"", thursday:""};
+}
+
+function applyRemoteRow(row){
+  if(!row) return;
+  applyingRemote = true;
+  if(row.key === "session"){
+    const v = row.value || {};
+    roster = v.roster || [];
+    tanks = v.tanks || [];
+    ccs = v.ccs || [];
+    heals = v.heals || [];
+    document.getElementById("raidTitle").value = v.raidTitle || "";
+    renderAll();
+  } else if(row.key === "classbook"){
+    classbook = row.value || {};
+  } else if(row.key === "rolebook"){
+    rolebook = row.value || {};
+  } else if(row.key === "webhooks"){
+    webhooks = row.value || {monday:"", thursday:""};
+    document.getElementById("webhookUrl").value = webhooks[currentDay] || "";
+  }
+  applyingRemote = false;
+}
+
+let realtimeChannel = null;
+function subscribeRealtime(){
+  if(realtimeChannel) return;
+  realtimeChannel = sb.channel("shared_state_changes")
+    .on("postgres_changes", {event:"*", schema:"public", table:"shared_state"}, payload=>{
+      applyRemoteRow(payload.new);
+    })
+    .subscribe(status=>{
+      const el = document.getElementById("liveStatus");
+      if(status === "SUBSCRIBED"){
+        el.innerHTML = `<span class="live-dot"></span>Live verbunden`;
+      } else if(status === "CHANNEL_ERROR" || status === "TIMED_OUT"){
+        el.innerHTML = `<span class="live-dot" style="background:var(--red)"></span>Verbindung unterbrochen`;
+      }
+    });
+}
+
+// ---------- Toast ----------
+function toast(msg, ok=true){
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "toast show " + (ok ? "ok" : "err");
+  setTimeout(()=>{ t.className = "toast"; }, 3500);
+}
+
+// ---------- Events ----------
+document.getElementById("btnParse").addEventListener("click", ()=>{
+  const text = document.getElementById("importText").value;
+  const {players, title} = parseImportText(text);
+  if(!players.length){ toast("Keine Spieler erkannt – Format prüfen.", false); return; }
+  roster = roster.concat(players);
+  const titleField = document.getElementById("raidTitle");
+  if(title && !titleField.value.trim()) titleField.value = title;
+  renderAll();
+  const missingClass = players.filter(p=>!p.class).length;
+  toast(`${players.length} Spieler importiert.` + (missingClass ? ` ${missingClass}x Klasse fehlt – bitte einmalig setzen.` : ""));
+});
+
+document.getElementById("btnAddPlayer").addEventListener("click", ()=>{
+  roster.push({id:nid(), name:"Neuer Spieler", class:"", role:"DPS"});
+  renderAll();
+});
+
+document.getElementById("btnNewRaid").addEventListener("click", newRaid);
+
+document.getElementById("btnAddTank").addEventListener("click", ()=>{
+  tanks.push({id:nid(), playerId:"", target:""});
+  renderAll();
+});
+document.getElementById("btnAddCc").addEventListener("click", ()=>{
+  ccs.push({id:nid(), playerId:"", ability:"", target:""});
+  renderAll();
+});
+document.getElementById("btnAddHeal").addEventListener("click", ()=>{
+  heals.push({id:nid(), playerId:"", target:"Raid"});
+  renderAll();
+});
+
+document.getElementById("raidTitle").addEventListener("input", ()=>{ renderPreview(); if(!applyingRemote) schedulePushSession(); });
+
+document.getElementById("btnCopy").addEventListener("click", ()=>{
+  navigator.clipboard.writeText(document.getElementById("rawBox").value)
+    .then(()=>toast("Markdown kopiert."))
+    .catch(()=>toast("Kopieren fehlgeschlagen.", false));
+});
+
+document.getElementById("btnPost").addEventListener("click", async ()=>{
+  const url = document.getElementById("webhookUrl").value.trim();
+  if(!url){ toast(`Bitte zuerst eine Webhook-URL für ${DAY_LABELS[currentDay]} eintragen.`, false); return; }
+  const content = buildMessage();
+  if(!confirm(`Nachricht jetzt in den ${DAY_LABELS[currentDay]}-Kanal posten?`)) return;
+  try{
+    const res = await fetch(url, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({content})
+    });
+    if(res.ok || res.status===204){
+      toast("Erfolgreich gepostet!");
+    } else {
+      toast("Discord-Fehler: " + res.status, false);
+    }
+  }catch(err){
+    toast("Netzwerkfehler beim Posten.", false);
+  }
+});
+
+// ---------- Tages-Reiter (Montag/Donnerstag) ----------
+const DAY_LABELS = {monday:"Montag", thursday:"Donnerstag"};
+let currentDay = localStorage.getItem("raidposter.activeDay") || "monday";
+
+function saveSettings(){
+  webhooks[currentDay] = document.getElementById("webhookUrl").value;
+  schedulePushWebhooks();
+}
+document.getElementById("webhookUrl").addEventListener("input", saveSettings);
+
+function selectDay(day){
+  currentDay = day;
+  localStorage.setItem("raidposter.activeDay", day);
+  document.querySelectorAll(".tab-btn").forEach(btn=>{
+    btn.classList.toggle("active", btn.dataset.day === day);
+  });
+  document.getElementById("webhookUrl").value = webhooks[day] || "";
+  document.getElementById("dayLabel").textContent = "(" + DAY_LABELS[day] + ")";
+}
+document.querySelectorAll(".tab-btn").forEach(btn=>{
+  btn.addEventListener("click", ()=>selectDay(btn.dataset.day));
+});
+
+// ---------- Login / App-Start ----------
+let appInitialized = false;
+
+async function initApp(){
+  if(appInitialized) return;
+  appInitialized = true;
+  document.getElementById("loginOverlay").style.display = "none";
+  applyingRemote = true;
+  await loadInitialState();
+  selectDay(currentDay);
+  renderAll();
+  applyingRemote = false;
+  subscribeRealtime();
+}
+
+function showLogin(){
+  appInitialized = false;
+  document.getElementById("loginOverlay").style.display = "flex";
+}
+
+async function doLogin(){
+  const pw = document.getElementById("loginPassword").value;
+  const errEl = document.getElementById("loginError");
+  errEl.textContent = "";
+  if(!pw){ errEl.textContent = "Bitte Passwort eingeben."; return; }
+  const {error} = await sb.auth.signInWithPassword({email: SHARED_EMAIL, password: pw});
+  if(error){ errEl.textContent = "Falsches Passwort."; }
+}
+document.getElementById("btnLogin").addEventListener("click", doLogin);
+document.getElementById("loginPassword").addEventListener("keydown", e=>{
+  if(e.key === "Enter") doLogin();
+});
+document.getElementById("btnLogout").addEventListener("click", ()=>sb.auth.signOut());
+
+sb.auth.onAuthStateChange((event, session)=>{
+  if(session){
+    initApp();
+  } else {
+    showLogin();
+  }
+});
+</script>
+</body>
+</html>
