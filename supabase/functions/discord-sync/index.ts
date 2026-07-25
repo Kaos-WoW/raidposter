@@ -1,8 +1,9 @@
-// Holt die neueste Raid-Helper-Setup-Nachricht aus dem Montag- oder Donnerstag-Kanal
+// Holt die neueste Raid-Helper "Composition Tool"-Nachricht (Group 1-5-Format, per
+// Footer "... | Composition Tool" erkennbar) aus dem Montag- oder Donnerstag-Kanal
 // und gibt sie als Text zurück - im selben Format, das man sonst per Copy-Paste aus
 // Discord einfügen würde, damit der bestehende Parser (parseImportText) sie
-// unverändert verarbeiten kann.
-import { createClient } from "jsr:@supabase/supabase-js@2";
+// unverändert verarbeiten kann. Die laufend aktualisierte, klassen-gruppierte
+// Live-Anmeldeliste (ohne "Composition Tool"-Footer) wird bewusst ignoriert.
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -13,6 +14,14 @@ const CHANNEL_IDS: Record<string, string> = {
   monday: Deno.env.get("CHANNEL_ID_MONDAY") ?? "",
   thursday: Deno.env.get("CHANNEL_ID_THURSDAY") ?? "",
 };
+
+function isCompositionToolEmbed(embed: any): boolean {
+  // "Composition Tool" steht als Link in einem der Felder ("Sent by ... | [Composition Tool](...)"),
+  // nicht im Embed-Footer (der enthält nur den generischen "Click the buttons..."-Hinweistext).
+  return (embed?.fields ?? []).some((f: any) =>
+    String(f.value ?? "").toLowerCase().includes("composition tool")
+  );
+}
 
 function embedToText(embed: any): string {
   const out: string[] = [];
@@ -30,7 +39,9 @@ function embedToText(embed: any): string {
   if (embed.footer?.text) out.push(embed.footer.text);
   return out.join("\n")
     // Discord-Custom-Emoji <a?:name:id> -> :name: (gleiche Form wie beim Copy-Paste)
-    .replace(/<a?:(\w+):\d+>/g, ":$1:");
+    .replace(/<a?:(\w+):\d+>/g, ":$1:")
+    // rohes Markdown-Fett (**Group 1:**) -> wie beim Copy-Paste aus dem Discord-Client ohne Sternchen
+    .replace(/\*\*/g, "");
 }
 
 Deno.serve(async (req) => {
@@ -39,9 +50,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Nur echte, per Passwort eingeloggte Nutzer dürfen synchronisieren - der
-    // öffentliche Anon-Key allein (ohne Login) reicht nicht.
     const authHeader = req.headers.get("Authorization") ?? "";
+    const { createClient } = await import("jsr:@supabase/supabase-js@2");
     const supa = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
@@ -72,7 +82,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages?limit=25`, {
+    const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages?limit=100`, {
       headers: { Authorization: `Bot ${botToken}` },
     });
 
@@ -85,17 +95,20 @@ Deno.serve(async (req) => {
     }
 
     const messages: any[] = await res.json();
-    // Discord liefert neueste zuerst - erste Bot-Nachricht mit Embed nehmen
-    const msg = messages.find((m) => m.author?.bot && Array.isArray(m.embeds) && m.embeds.length > 0);
+    // Discord liefert neueste zuerst - erste Nachricht mit "Composition Tool"-Embed nehmen
+    const msg = messages.find((m) =>
+      Array.isArray(m.embeds) && m.embeds.some(isCompositionToolEmbed)
+    );
 
     if (!msg) {
-      return new Response(JSON.stringify({ error: "Keine passende Raid-Helper-Nachricht im Kanal gefunden." }), {
+      return new Response(JSON.stringify({ error: "Keine 'Composition Tool'-Nachricht von Raid-Helper in den letzten 50 Nachrichten des Kanals gefunden." }), {
         status: 404,
         headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
       });
     }
 
-    const text = embedToText(msg.embeds[0]);
+    const embed = msg.embeds.find(isCompositionToolEmbed);
+    const text = embedToText(embed);
     return new Response(JSON.stringify({ text }), {
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
     });
