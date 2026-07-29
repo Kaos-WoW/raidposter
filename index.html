@@ -622,7 +622,7 @@ function buildMessage(){
   const validTanks = tanks.filter(t=>t.playerId && t.target.trim());
   if(validTanks.length){
     validTanks.forEach(t=>{
-      lines.push(`• **${playerName(t.playerId)}** tankt **${t.target.trim()}**`);
+      lines.push(`• @${playerName(t.playerId)} tankt **${t.target.trim()}**`);
     });
   } else {
     lines.push("_Keine Tanks zugewiesen_");
@@ -634,7 +634,7 @@ function buildMessage(){
   if(validCcs.length){
     validCcs.forEach(c=>{
       const ability = c.ability.trim();
-      lines.push(`• **${playerName(c.playerId)}**${ability ? ` (${ability})` : ""} → **${c.target.trim()}**`);
+      lines.push(`• @${playerName(c.playerId)}${ability ? ` (${ability})` : ""} → **${c.target.trim()}**`);
     });
   } else {
     lines.push("_Keine CC-Zuweisungen_");
@@ -652,7 +652,7 @@ function buildMessage(){
     Object.keys(groups).forEach(target=>{
       const names = groups[target];
       const verb = names.length > 1 ? "heilen" : "heilt";
-      const boldNames = names.map(n=>`**${n}**`).join(", ");
+      const boldNames = names.map(n=>`@${n}`).join(", ");
       lines.push(`• ${boldNames} ${verb} **${target}**`);
     });
   } else {
