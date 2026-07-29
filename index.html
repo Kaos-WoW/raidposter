@@ -128,7 +128,7 @@
         <span>Roster<span class="count-pill" id="rosterCount">0</span></span>
       </div>
       <table id="rosterTable">
-        <thead><tr><th>Name</th><th>Klasse</th><th>Rolle</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Klasse</th><th>Rolle</th><th>Discord-ID</th><th></th></tr></thead>
         <tbody id="rosterBody"></tbody>
       </table>
       <div class="empty-hint" id="rosterEmptyHint">Noch keine Spieler importiert.</div>
@@ -259,12 +259,13 @@ const STATUS_ROLE_OVERRIDE = {
   "declined":"Abmeldung", "decline":"Abmeldung", "late":"Verspätet"
 };
 
-let roster = []; // {id, name, class, role}
+let roster = []; // {id, name, class, role, discordId}
 let tanks = [];  // {id, playerId, target}
 let ccs = [];    // {id, playerId, ability, target}
 let heals = [];  // {id, playerId, target}
 let classbook = {}; // Name -> Klasse, geteilt über alle Raidleitungs-Konten
 let rolebook = {};  // Name -> Rolle, geteilt über alle Raidleitungs-Konten
+let idbook = {};    // Name -> Discord-ID, geteilt über alle Raidleitungs-Konten
 let webhooks = {monday:"", thursday:""};
 const nid = () => crypto.randomUUID();
 
@@ -338,7 +339,8 @@ function parseImportText(text){
         });
         if(!cls && classbook[namePart]) cls = classbook[namePart];
         let finalRole = statusRole || role || rolebook[namePart] || "";
-        if(namePart) found.push({id:nid(), name:namePart, class: cls || "", role: finalRole});
+        let finalId = idbook[namePart] || "";
+        if(namePart) found.push({id:nid(), name:namePart, class: cls || "", role: finalRole, discordId: finalId});
         processedFirstLine = true;
         continue;
       }
@@ -379,8 +381,9 @@ function parseImportText(text){
     // explicit role from this import (Tank/Healer/DPS header) wins over remembered role;
     // group-only formats (no role header) fall back to what was set for this name last time
     let role = currentRole || rolebook[name] || "";
+    let discordId = idbook[name] || "";
 
-    if(name) found.push({id:nid(), name, class: cls || "", role});
+    if(name) found.push({id:nid(), name, class: cls || "", role, discordId});
   }
 
   // Automatisch lernen: alles was diesmal eindeutig aufgelöst wurde, für künftige
@@ -388,9 +391,11 @@ function parseImportText(text){
   found.forEach(p=>{
     if(p.class) classbook[p.name] = p.class;
     if(p.role === "Tank" || p.role === "Heiler" || p.role === "DPS") rolebook[p.name] = p.role;
+    if(p.discordId) idbook[p.name] = p.discordId;
   });
   schedulePushClassbook();
   schedulePushRolebook();
+  schedulePushIdbook();
 
   return {players: found, title};
 }
@@ -416,6 +421,7 @@ function renderRoster(){
       <td><input type="text" value="${escapeAttr(p.name)}" data-field="name" data-id="${p.id}"></td>
       <td><select data-field="class" data-id="${p.id}">${classOptions(p.class)}</select></td>
       <td><select data-field="role" data-id="${p.id}">${roleOptions(p.role)}</select></td>
+      <td><input type="text" placeholder="z.B. 123456..." value="${escapeAttr(p.discordId||"")}" data-field="discordId" data-id="${p.id}"></td>
       <td><button class="danger" data-remove="${p.id}">✕</button></td>
     `;
     body.appendChild(tr);
@@ -449,6 +455,10 @@ function onRosterFieldChange(e){
   if(field==="role" && p.name){
     if(p.role) rolebook[p.name] = p.role; else delete rolebook[p.name];
     schedulePushRolebook();
+  }
+  if(field==="discordId" && p.name){
+    if(p.discordId) idbook[p.name] = p.discordId; else delete idbook[p.name];
+    schedulePushIdbook();
   }
   renderAll();
 }
@@ -612,6 +622,12 @@ function playerName(id){
   return p ? p.name : "?";
 }
 
+function playerMention(id){
+  const p = roster.find(x=>x.id===id);
+  if(!p) return "?";
+  return p.discordId ? `<@${p.discordId}>` : p.name;
+}
+
 function buildMessage(){
   const title = document.getElementById("raidTitle").value.trim();
   const lines = [];
@@ -622,7 +638,7 @@ function buildMessage(){
   const validTanks = tanks.filter(t=>t.playerId && t.target.trim());
   if(validTanks.length){
     validTanks.forEach(t=>{
-      lines.push(`• @${playerName(t.playerId)} tankt **${t.target.trim()}**`);
+      lines.push(`• ${playerMention(t.playerId)} tankt **${t.target.trim()}**`);
     });
   } else {
     lines.push("_Keine Tanks zugewiesen_");
@@ -634,7 +650,7 @@ function buildMessage(){
   if(validCcs.length){
     validCcs.forEach(c=>{
       const ability = c.ability.trim();
-      lines.push(`• @${playerName(c.playerId)}${ability ? ` (${ability})` : ""} → **${c.target.trim()}**`);
+      lines.push(`• ${playerMention(c.playerId)}${ability ? ` (${ability})` : ""} → **${c.target.trim()}**`);
     });
   } else {
     lines.push("_Keine CC-Zuweisungen_");
@@ -647,12 +663,12 @@ function buildMessage(){
     const groups = {};
     validHeals.forEach(h=>{
       const t = h.target.trim();
-      (groups[t] = groups[t] || []).push(playerName(h.playerId));
+      (groups[t] = groups[t] || []).push(h.playerId);
     });
     Object.keys(groups).forEach(target=>{
-      const names = groups[target];
-      const verb = names.length > 1 ? "heilen" : "heilt";
-      const boldNames = names.map(n=>`@${n}`).join(", ");
+      const playerIds = groups[target];
+      const verb = playerIds.length > 1 ? "heilen" : "heilt";
+      const boldNames = playerIds.map(id=>playerMention(id)).join(", ");
       lines.push(`• ${boldNames} ${verb} **${target}**`);
     });
   } else {
@@ -718,6 +734,12 @@ async function pushRolebook(){
 }
 const schedulePushRolebook = debounce(pushRolebook, 400);
 
+async function pushIdbook(){
+  if(applyingRemote) return;
+  await sb.from("shared_state").upsert({key:"idbook", value:idbook, updated_at:new Date().toISOString()});
+}
+const schedulePushIdbook = debounce(pushIdbook, 400);
+
 async function pushWebhooks(){
   if(applyingRemote) return;
   await sb.from("shared_state").upsert({key:"webhooks", value:webhooks, updated_at:new Date().toISOString()});
@@ -726,7 +748,7 @@ const schedulePushWebhooks = debounce(pushWebhooks, 400);
 
 async function loadInitialState(){
   const {data, error} = await sb.from("shared_state").select("key,value")
-    .in("key", ["session","classbook","rolebook","webhooks"]);
+    .in("key", ["session","classbook","rolebook","webhooks","idbook"]);
   if(error){ toast("Fehler beim Laden aus der Cloud: " + error.message, false); return; }
   const byKey = Object.fromEntries((data||[]).map(r=>[r.key, r.value]));
   const session = byKey.session || {};
@@ -737,6 +759,7 @@ async function loadInitialState(){
   document.getElementById("raidTitle").value = session.raidTitle || "";
   classbook = byKey.classbook || {};
   rolebook = byKey.rolebook || {};
+  idbook = byKey.idbook || {};
   webhooks = byKey.webhooks || {monday:"", thursday:""};
 }
 
@@ -755,6 +778,9 @@ function applyRemoteRow(row){
     classbook = row.value || {};
   } else if(row.key === "rolebook"){
     rolebook = row.value || {};
+  } else if(row.key === "idbook"){
+    idbook = row.value || {};
+    renderAll();
   } else if(row.key === "webhooks"){
     webhooks = row.value || {monday:"", thursday:""};
     document.getElementById("webhookUrl").value = webhooks[currentDay] || "";
@@ -824,7 +850,7 @@ document.getElementById("btnSyncDiscord").addEventListener("click", async ()=>{
 });
 
 document.getElementById("btnAddPlayer").addEventListener("click", ()=>{
-  roster.push({id:nid(), name:"Neuer Spieler", class:"", role:"DPS"});
+  roster.push({id:nid(), name:"Neuer Spieler", class:"", role:"DPS", discordId:""});
   renderAll();
 });
 
