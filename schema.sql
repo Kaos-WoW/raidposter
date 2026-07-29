@@ -25,5 +25,13 @@ insert into shared_state (key, value) values
   ('session', '{}'::jsonb),
   ('classbook', '{}'::jsonb),
   ('rolebook', '{}'::jsonb),
-  ('webhooks', '{}'::jsonb)
+  ('webhooks', '{}'::jsonb),
+  ('postedMessages', '{}'::jsonb),
+  ('idsLocked', 'false'::jsonb)
+on conflict (key) do nothing;
+
+-- Falls die Tabelle schon existiert (bestehende Installation): nur diese Zeilen nachziehen.
+insert into shared_state (key, value) values
+  ('postedMessages', '{}'::jsonb),
+  ('idsLocked', 'false'::jsonb)
 on conflict (key) do nothing;

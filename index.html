@@ -126,6 +126,7 @@
     <div style="margin-top:14px;">
       <div class="actions-top">
         <span>Roster<span class="count-pill" id="rosterCount">0</span></span>
+        <button class="secondary small" id="btnLockIds" style="margin-left:auto;" title="Verhindert versehentliches Ändern der Discord-IDs (gilt für alle Raidleiter)">🔒 IDs sperren</button>
       </div>
       <table id="rosterTable">
         <thead><tr><th>Name</th><th>Klasse</th><th>Rolle</th><th>Discord-ID</th><th></th></tr></thead>
@@ -185,6 +186,7 @@
     <div style="margin-top:14px; display:flex; gap:8px;">
       <button id="btnPost">📤 Posten</button>
       <button class="secondary" id="btnCopy">Markdown kopieren</button>
+      <button class="secondary" id="btnNewPost" title="Nächster Post erzeugt eine neue Nachricht statt die bestehende zu aktualisieren" style="display:none;">Neuer Post</button>
     </div>
   </div>
 
@@ -267,6 +269,8 @@ let classbook = {}; // Name -> Klasse, geteilt über alle Raidleitungs-Konten
 let rolebook = {};  // Name -> Rolle, geteilt über alle Raidleitungs-Konten
 let idbook = {};    // Name -> Discord-ID, geteilt über alle Raidleitungs-Konten
 let webhooks = {monday:"", thursday:""};
+let postedMessages = {monday:null, thursday:null}; // Tag -> zuletzt geposteter Discord-Message-ID
+let idsLocked = false; // Discord-ID-Spalte gegen versehentliches Überschreiben gesperrt
 const nid = () => crypto.randomUUID();
 
 // Während eine Änderung von einem ANDEREN Client übernommen wird, nicht sofort
@@ -421,7 +425,7 @@ function renderRoster(){
       <td><input type="text" value="${escapeAttr(p.name)}" data-field="name" data-id="${p.id}"></td>
       <td><select data-field="class" data-id="${p.id}">${classOptions(p.class)}</select></td>
       <td><select data-field="role" data-id="${p.id}">${roleOptions(p.role)}</select></td>
-      <td><input type="text" placeholder="z.B. 123456..." value="${escapeAttr(p.discordId||"")}" data-field="discordId" data-id="${p.id}"></td>
+      <td><input type="text" placeholder="z.B. 123456..." value="${escapeAttr(p.discordId||"")}" data-field="discordId" data-id="${p.id}" ${idsLocked?"readonly title=\"Discord-IDs sind gesperrt. Zum Ändern erst entsperren.\"":""}></td>
       <td><button class="danger" data-remove="${p.id}">✕</button></td>
     `;
     body.appendChild(tr);
@@ -456,9 +460,12 @@ function onRosterFieldChange(e){
     if(p.role) rolebook[p.name] = p.role; else delete rolebook[p.name];
     schedulePushRolebook();
   }
-  if(field==="discordId" && p.name){
-    if(p.discordId) idbook[p.name] = p.discordId; else delete idbook[p.name];
-    schedulePushIdbook();
+  if(field==="discordId"){
+    if(idsLocked){ renderRoster(); return; }
+    if(p.name){
+      if(p.discordId) idbook[p.name] = p.discordId; else delete idbook[p.name];
+      schedulePushIdbook();
+    }
   }
   renderAll();
 }
@@ -746,9 +753,19 @@ async function pushWebhooks(){
 }
 const schedulePushWebhooks = debounce(pushWebhooks, 400);
 
+async function pushPostedMessages(){
+  if(applyingRemote) return;
+  await sb.from("shared_state").upsert({key:"postedMessages", value:postedMessages, updated_at:new Date().toISOString()});
+}
+
+async function pushIdsLocked(){
+  if(applyingRemote) return;
+  await sb.from("shared_state").upsert({key:"idsLocked", value:idsLocked, updated_at:new Date().toISOString()});
+}
+
 async function loadInitialState(){
   const {data, error} = await sb.from("shared_state").select("key,value")
-    .in("key", ["session","classbook","rolebook","webhooks","idbook"]);
+    .in("key", ["session","classbook","rolebook","webhooks","idbook","postedMessages","idsLocked"]);
   if(error){ toast("Fehler beim Laden aus der Cloud: " + error.message, false); return; }
   const byKey = Object.fromEntries((data||[]).map(r=>[r.key, r.value]));
   const session = byKey.session || {};
@@ -761,6 +778,9 @@ async function loadInitialState(){
   rolebook = byKey.rolebook || {};
   idbook = byKey.idbook || {};
   webhooks = byKey.webhooks || {monday:"", thursday:""};
+  postedMessages = byKey.postedMessages || {monday:null, thursday:null};
+  idsLocked = byKey.idsLocked === true;
+  updateLockButtonState();
 }
 
 function applyRemoteRow(row){
@@ -784,6 +804,13 @@ function applyRemoteRow(row){
   } else if(row.key === "webhooks"){
     webhooks = row.value || {monday:"", thursday:""};
     document.getElementById("webhookUrl").value = webhooks[currentDay] || "";
+  } else if(row.key === "postedMessages"){
+    postedMessages = row.value || {monday:null, thursday:null};
+    updatePostButtonState();
+  } else if(row.key === "idsLocked"){
+    idsLocked = row.value === true;
+    updateLockButtonState();
+    renderRoster();
   }
   applyingRemote = false;
 }
@@ -849,6 +876,17 @@ document.getElementById("btnSyncDiscord").addEventListener("click", async ()=>{
   }
 });
 
+function updateLockButtonState(){
+  const btn = document.getElementById("btnLockIds");
+  btn.textContent = idsLocked ? "🔓 IDs entsperren" : "🔒 IDs sperren";
+}
+document.getElementById("btnLockIds").addEventListener("click", async ()=>{
+  idsLocked = !idsLocked;
+  updateLockButtonState();
+  renderRoster();
+  await pushIdsLocked();
+  toast(idsLocked ? "Discord-IDs sind jetzt gesperrt." : "Discord-IDs sind wieder entsperrt.");
+});
 document.getElementById("btnAddPlayer").addEventListener("click", ()=>{
   roster.push({id:nid(), name:"Neuer Spieler", class:"", role:"DPS", discordId:""});
   renderAll();
@@ -877,18 +915,58 @@ document.getElementById("btnCopy").addEventListener("click", ()=>{
     .catch(()=>toast("Kopieren fehlgeschlagen.", false));
 });
 
+function updatePostButtonState(){
+  const existingId = postedMessages[currentDay];
+  document.getElementById("btnPost").textContent = existingId ? "🔄 Post aktualisieren" : "📤 Posten";
+  document.getElementById("btnNewPost").style.display = existingId ? "" : "none";
+}
+
 document.getElementById("btnPost").addEventListener("click", async ()=>{
   const url = document.getElementById("webhookUrl").value.trim();
   if(!url){ toast(`Bitte zuerst eine Webhook-URL für ${DAY_LABELS[currentDay]} eintragen.`, false); return; }
   const content = buildMessage();
+  const existingId = postedMessages[currentDay];
+
+  if(existingId){
+    if(!confirm(`Bestehenden Post im ${DAY_LABELS[currentDay]}-Kanal aktualisieren?`)) return;
+    try{
+      const res = await fetch(`${url}/messages/${existingId}`, {
+        method:"PATCH",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({content})
+      });
+      if(res.ok){
+        toast("Post aktualisiert!");
+      } else if(res.status === 404){
+        // Nachricht existiert nicht mehr (z.B. gelöscht) -> als neuen Post behandeln
+        toast("Alter Post nicht mehr gefunden, poste neu...", false);
+        postedMessages[currentDay] = null;
+        await postNewMessage(url, content);
+      } else {
+        toast("Discord-Fehler: " + res.status, false);
+      }
+    }catch(err){
+      toast("Netzwerkfehler beim Aktualisieren.", false);
+    }
+    return;
+  }
+
   if(!confirm(`Nachricht jetzt in den ${DAY_LABELS[currentDay]}-Kanal posten?`)) return;
+  await postNewMessage(url, content);
+});
+
+async function postNewMessage(url, content){
   try{
-    const res = await fetch(url, {
+    const res = await fetch(`${url}?wait=true`, {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({content})
     });
-    if(res.ok || res.status===204){
+    if(res.ok){
+      const data = await res.json();
+      postedMessages[currentDay] = data.id;
+      await pushPostedMessages();
+      updatePostButtonState();
       toast("Erfolgreich gepostet!");
     } else {
       toast("Discord-Fehler: " + res.status, false);
@@ -896,6 +974,14 @@ document.getElementById("btnPost").addEventListener("click", async ()=>{
   }catch(err){
     toast("Netzwerkfehler beim Posten.", false);
   }
+}
+
+document.getElementById("btnNewPost").addEventListener("click", async ()=>{
+  if(!confirm(`Nächster Klick auf "Posten" erstellt eine NEUE Nachricht im ${DAY_LABELS[currentDay]}-Kanal statt den bisherigen Post zu aktualisieren. Fortfahren?`)) return;
+  postedMessages[currentDay] = null;
+  await pushPostedMessages();
+  updatePostButtonState();
+  toast("Nächster Post startet neu.");
 });
 
 // ---------- Tages-Reiter (Montag/Donnerstag) ----------
@@ -916,6 +1002,7 @@ function selectDay(day){
   });
   document.getElementById("webhookUrl").value = webhooks[day] || "";
   document.getElementById("dayLabel").textContent = "(" + DAY_LABELS[day] + ")";
+  updatePostButtonState();
 }
 document.querySelectorAll(".tab-btn").forEach(btn=>{
   btn.addEventListener("click", ()=>selectDay(btn.dataset.day));
